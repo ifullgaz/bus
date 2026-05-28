@@ -1,0 +1,41 @@
+name: release
+
+on:
+  push:
+    branches:
+      - ifullgaz-scope
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Prevent manual runs from publishing from the wrong branch
+    if: github.ref == 'refs/heads/ifullgaz-scope'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: '@ifullgaz'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install
+        run: yarn install
+
+      - name: Configure Git
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+      - name: Release
+        run: yarn release -- --ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}          
