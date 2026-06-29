@@ -41,4 +41,102 @@ test.group('Memory Transport', () => {
 
     await transport2.publish('testing-channel', 'test')
   }).waitForDone()
+
+  test('delivers a message to every subscriber on the channel', async ({ assert, cleanup }) => {
+    const subscriber1 = new MemoryTransport().setId('subscriber1')
+    const subscriber2 = new MemoryTransport().setId('subscriber2')
+    const publisher = new MemoryTransport().setId('publisher')
+
+    cleanup(async () => {
+      await subscriber1.disconnect()
+      await subscriber2.disconnect()
+      await publisher.disconnect()
+    })
+
+    let count1 = 0
+    let count2 = 0
+    await subscriber1.subscribe('multi-channel', () => {
+      count1++
+    })
+    await subscriber2.subscribe('multi-channel', () => {
+      count2++
+    })
+
+    await publisher.publish('multi-channel', 'test')
+
+    assert.equal(count1, 1)
+    assert.equal(count2, 1)
+  })
+
+  test('unsubscribe only removes the subscription of the calling transport', async ({
+    assert,
+    cleanup,
+  }) => {
+    const subscriber1 = new MemoryTransport().setId('subscriber1')
+    const subscriber2 = new MemoryTransport().setId('subscriber2')
+    const publisher = new MemoryTransport().setId('publisher')
+
+    cleanup(async () => {
+      await subscriber1.disconnect()
+      await subscriber2.disconnect()
+      await publisher.disconnect()
+    })
+
+    let count1 = 0
+    let count2 = 0
+    await subscriber1.subscribe('isolation-channel', () => {
+      count1++
+    })
+    await subscriber2.subscribe('isolation-channel', () => {
+      count2++
+    })
+
+    await subscriber1.unsubscribe('isolation-channel')
+    await publisher.publish('isolation-channel', 'test')
+
+    assert.equal(count1, 0)
+    assert.equal(count2, 1)
+  })
+
+  test('tracks delivered messages in receivedMessages', async ({ assert, cleanup }) => {
+    const subscriber = new MemoryTransport().setId('subscriber')
+    const publisher = new MemoryTransport().setId('publisher')
+
+    cleanup(async () => {
+      await subscriber.disconnect()
+      await publisher.disconnect()
+    })
+
+    await subscriber.subscribe('received-channel', () => {})
+
+    await publisher.publish('received-channel', 'first')
+    await publisher.publish('received-channel', 'second')
+
+    assert.deepEqual(subscriber.receivedMessages, ['first', 'second'])
+  })
+
+  test('publishing to a channel without subscribers does not throw', async ({ assert }) => {
+    const transport = new MemoryTransport().setId('publisher')
+
+    await assert.doesNotReject(() => transport.publish('empty-channel', 'test'))
+  })
+
+  test('disconnect clears all subscriptions', async ({ assert, cleanup }) => {
+    const subscriber = new MemoryTransport().setId('subscriber')
+    const publisher = new MemoryTransport().setId('publisher')
+
+    cleanup(async () => {
+      await publisher.disconnect()
+    })
+
+    let count = 0
+    await subscriber.subscribe('disconnect-channel', () => {
+      count++
+    })
+
+    await subscriber.disconnect()
+    await publisher.publish('disconnect-channel', 'test')
+
+    assert.equal(count, 0)
+  })
 })
