@@ -24,6 +24,36 @@ test.group('RetryQueue', () => {
 
     assert.instanceOf(queue.getInternalQueue(), RetryQueueWithDuplicates)
   })
+
+  test('getOptions returns the merged default options', ({ assert }) => {
+    const queue = new RetryQueue()
+
+    assert.deepEqual(queue.getOptions(), {
+      enabled: true,
+      maxSize: null,
+      removeDuplicates: true,
+    })
+  })
+
+  test('delegates enqueue, size, process and dequeue to the internal queue', async ({ assert }) => {
+    const queue = new RetryQueue({ removeDuplicates: false })
+
+    assert.isTrue(queue.enqueue(channel, { busId: 'testing', payload: 'foo' }))
+    assert.equal(queue.size(), 1)
+
+    let processed = 0
+    await queue.process(async () => {
+      processed++
+      return true
+    })
+
+    assert.equal(processed, 1)
+    assert.equal(queue.size(), 0)
+
+    queue.enqueue(channel, { busId: 'testing', payload: 'bar' })
+    queue.dequeue()
+    assert.equal(queue.size(), 0)
+  })
 })
 
 test.group('RetryQueueWithDuplicates', () => {
@@ -130,6 +160,38 @@ test.group('RetryQueueWithDuplicates', () => {
 
     assert.equal(count, 3)
     assert.equal(queue.size(), 3)
+  })
+
+  test('is a no-op when disabled', async ({ assert }) => {
+    const queue = new RetryQueueWithDuplicates({ enabled: false })
+
+    assert.isFalse(queue.enqueue(channel, { busId: 'testing', payload: 'foo' }))
+    assert.equal(queue.size(), 0)
+
+    let processed = 0
+    await queue.process(async () => {
+      processed++
+      return true
+    })
+
+    assert.equal(processed, 0)
+    assert.doesNotThrow(() => queue.dequeue())
+  })
+
+  test('dequeue on an empty queue returns undefined', ({ assert }) => {
+    const queue = new RetryQueueWithDuplicates()
+
+    assert.isUndefined(queue.dequeue())
+  })
+
+  test('evicts the oldest message when maxSize is 1', ({ assert }) => {
+    const queue = new RetryQueueWithDuplicates({ maxSize: 1 })
+
+    queue.enqueue(channel, { busId: 'testing', payload: 'first' })
+    queue.enqueue(channel, { busId: 'testing', payload: 'second' })
+
+    assert.equal(queue.size(), 1)
+    assert.equal(queue.dequeue()!.payload, 'second')
   })
 })
 
@@ -258,5 +320,46 @@ test.group('RetryQueueWithoutDuplicates', () => {
 
     assert.equal(count, 3)
     assert.equal(queue.size(), 3)
+  })
+
+  test('treats the same payload on different channels as a duplicate', ({ assert }) => {
+    const queue = new RetryQueueWithoutDuplicates()
+
+    assert.isTrue(queue.enqueue('channel-a', { busId: 'testing', payload: 'foo' }))
+    assert.isFalse(queue.enqueue('channel-b', { busId: 'testing', payload: 'foo' }))
+
+    assert.equal(queue.size(), 1)
+  })
+
+  test('is a no-op when disabled', async ({ assert }) => {
+    const queue = new RetryQueueWithoutDuplicates({ enabled: false })
+
+    assert.isFalse(queue.enqueue(channel, { busId: 'testing', payload: 'foo' }))
+    assert.equal(queue.size(), 0)
+
+    let processed = 0
+    await queue.process(async () => {
+      processed++
+      return true
+    })
+
+    assert.equal(processed, 0)
+    assert.doesNotThrow(() => queue.dequeue())
+  })
+
+  test('dequeue on an empty queue returns undefined', ({ assert }) => {
+    const queue = new RetryQueueWithoutDuplicates()
+
+    assert.isUndefined(queue.dequeue())
+  })
+
+  test('evicts the oldest message when maxSize is 1', ({ assert }) => {
+    const queue = new RetryQueueWithoutDuplicates({ maxSize: 1 })
+
+    queue.enqueue(channel, { busId: 'testing', payload: 'first' })
+    queue.enqueue(channel, { busId: 'testing', payload: 'second' })
+
+    assert.equal(queue.size(), 1)
+    assert.equal(queue.dequeue()!.payload, 'second')
   })
 })
